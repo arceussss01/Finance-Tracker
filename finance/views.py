@@ -1,10 +1,12 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, HttpResponse
 from django.views import View
 from finance.forms import RegisterForm, TransactionForm, GoalForm
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from .models import Transaction, Goal
 from django.db.models import Sum
+from .admin import TransactionResource
+from django.contrib import messages
 
 # Create your views here.
 
@@ -19,6 +21,7 @@ class RegisterView(View):
         if form.is_valid():
             user = form.save()
             login(request, user)
+            messages.success(request, 'Account created successfully!')
             return redirect('dashboard')
         # print(form.errors)
         
@@ -70,13 +73,14 @@ class TransactionCreateView(LoginRequiredMixin, View):
                 transaction = form.save(commit=False)
                 transaction.user = request.user
                 transaction.save()
+                messages.success(request, 'Transaction Added successfully!')
                 return redirect('dashboard')
 
             return render(request, 'finance/transaction_form.html', {'form':form})
 
 class TransactionListView(LoginRequiredMixin, View):
      def get(self, request, *args, **kwargs):
-            transactions = Transaction.objects.all()
+            transactions = Transaction.objects.filter(user = request.user)
             return render(request, 'finance/transaction_list.html', {'transactions':transactions})
 
 
@@ -94,3 +98,19 @@ class GoalCreateView(LoginRequiredMixin, View):
                 return redirect('dashboard')
 
             return render(request, 'finance/goal_form.html', {'form':form})
+
+def export_transactions(request):
+    user_transactions = Transaction.objects.filter(user = request.user)
+    transaction_resource = TransactionResource()
+
+    dataset = transaction_resource.export(queryset=user_transactions)
+
+    excel_data = dataset.export('xlsx')
+
+    # create hhtpresponse with the correct MIME type for an Excel file
+    response = HttpResponse(excel_data, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # set header for downloading the file
+    response['Content-Disposition'] = 'attachment; filename=transactions_report.xlsx'
+    return response
+
